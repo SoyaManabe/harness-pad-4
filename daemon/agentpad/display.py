@@ -41,10 +41,13 @@ from .protocol import MAX_SLOTS, SessionState, build_text_report, sanitize_text
 # 対応が必要な状態。この順に優先して詳細を出す。
 ATTENTION_STATES = (SessionState.WAITING.name, SessionState.ERROR.name)
 
-# 一覧に出さない状態。何も起きていないスロットで画面を埋めない（焼き付き対策も兼ねる）。
-QUIET_STATES = (SessionState.EMPTY.name, SessionState.IDLE.name)
+# 一覧に出さない状態。空きスロットだけ。
+# 待機中のセッションは出す。どのキーにどのセッションが居るかを、何も起きていない
+# あいだも確かめられるようにするため。そのぶん同じ文字が出続けるので、焼き付きは進みやすい。
+QUIET_STATES = (SessionState.EMPTY.name,)
 
 STATE_ABBREVIATIONS = {
+    SessionState.IDLE.name: "IDLE",
     SessionState.BUSY.name: "BUSY",
     SessionState.WAITING.name: "WAIT",
     SessionState.DONE.name: "DONE",

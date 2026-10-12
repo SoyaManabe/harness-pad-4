@@ -194,7 +194,8 @@ igin main                     (scrolls line by line if it does not fit)
 - If several sessions are waiting or in error, their details are shown in turn (`1/2` at the top right).
 - **`!` marks an operation that looks irreversible** (`rm -r`, `sudo`, `git push --force`, and so on).
   It is a fixed set of rules, so **the absence of `!` does not mean the operation is safe.**
-- Idle sessions are not listed. If every session is idle or empty, the display turns off.
+- Idle sessions stay listed (`1 IDLE my-project`), so you can always see which session is on which key.
+  The display turns off only when no session is assigned, or when the daemon is not running.
 
 ### The `/pad` skill
 
@@ -241,7 +242,7 @@ The log is written to `%LOCALAPPDATA%\AgentPad\agentpad.log`.
 | LEDs do not light | Does `agentpadctl status` say the daemon is running (稼働中) and the pad is connected (接続中)? |
 | Pad not found (未接続) | Is the USB cable a data cable? Try another port. On Windows, `daemon\agentpadctl check` tells you if a different pad version is plugged in |
 | Running, but no sessions appear | The hooks are not registered or not loaded. On Windows, run `daemon\agentpadctl check`. After registering, open `/hooks` or start a new session |
-| Display stays off | It is off when every session is idle. Give the agent something to do |
+| Display stays off | It is off when no session is assigned. Start a Claude Code session, then check `agentpadctl status` |
 | Cannot load `libhidapi` (macOS) | Run `brew install hidapi`, then `./install.sh` again |
 | Key press does not bring the terminal forward (macOS) | System Settings → Privacy & Security → Automation: is it allowed? |
 | Key press does not bring the terminal forward (Windows) | See [below](#when-the-terminal-does-not-come-forward-windows) |
