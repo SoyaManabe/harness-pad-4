@@ -1,26 +1,29 @@
 # harness-pad-4
 
-AI エージェントの「待ち」に気づくための 4 キーのパッド、harness-pad-4 を動かすソフトウェア一式です。
+Software for harness-pad-4, a 4-key pad that tells you when an AI agent is waiting for you.
 
-Claude Code などのエージェントは、許可や返事を求めて止まります。別の作業をしていると、
-止まっていることに気づけません。このパッドは、セッションごとの状態をキーの LED の色で示し、
-何を求められているかをディスプレイに出します。キーを押すと、そのセッションの端末が前に出ます。
+Agents such as Claude Code stop and wait when they need permission or an answer. If you are
+working on something else, you don't notice. This pad shows the state of each session with the
+color of a key's LED, and shows what is being asked on its display. Pressing a key brings that
+session's terminal to the front.
 
-**パッドは知らせて、案内するだけです。承認や入力をパッドから送ることはありません。**
-判断は、内容を読んだうえで端末で行ってください。
+**The pad only notifies and navigates. It never sends an approval or any input.**
+Read the request and decide in the terminal.
 
-## 必要なもの
+> The tools print their messages in Japanese for now. The sample output below is shown as is.
+
+## Requirements
 
 | | |
 |---|---|
-| パッド | harness-pad-4（ファームウェアは書き込み済み） |
-| OS | **macOS** か **Windows 10 / 11**（Windows は試験段階。下の「Windows での制限」を参照） |
-| Python | 3.9 以上 |
-| エージェント | Claude Code（ほかのエージェントは「ほかのエージェントを繋ぐ」を参照） |
+| Pad | harness-pad-4 (firmware already flashed) |
+| OS | **macOS**, or **Windows 10 / 11** (experimental — see [Limitations on Windows](#limitations-on-windows)) |
+| Python | 3.9 or later |
+| Agent | Claude Code (for others, see [Connecting other agents](#connecting-other-agents)) |
 
-macOS では、hidapi を入れるために Homebrew も使います。Windows では Python のほかに要るものはありません。
+macOS also needs Homebrew, to install hidapi. Windows needs nothing besides Python.
 
-## セットアップ（macOS）
+## Setup (macOS)
 
 ```sh
 brew install hidapi
@@ -29,26 +32,26 @@ cd harness-pad-4
 ./install.sh
 ```
 
-`install.sh` は次の 3 つを行います。何度実行しても構いません。
+`install.sh` does three things. It is safe to run more than once.
 
-1. `daemon/.venv` に Python の専用環境を作り、依存（`hid`）を入れる
-2. Claude Code のスキル `/pad` を `~/.claude/skills/pad/` に入れる
-3. デーモンを常駐させる（ログイン時に自動で起動し、落ちたら再起動する）
+1. Creates a Python environment in `daemon/.venv` and installs the dependency (`hid`)
+2. Installs the Claude Code skill `/pad` into `~/.claude/skills/pad/`
+3. Registers the daemon as a service (starts at login, restarts if it crashes)
 
-### フックを設定する
+### Set up the hooks
 
-エージェントの状態は、Claude Code のフックからデーモンへ届きます。**これだけは手で設定します。**
+The agent's state reaches the daemon through Claude Code hooks. **On macOS this step is manual.**
 
-1. [`daemon/hooks.example.json`](daemon/hooks.example.json) の `"hooks"` の中身を、
-   `~/.claude/settings.json` の `"hooks"` に統合する。すでに別のフックがあれば、消さずに並べる
-2. Claude Code で `/hooks` を開くか、セッションを始め直す
+1. Merge the contents of `"hooks"` in [`daemon/hooks.example.json`](daemon/hooks.example.json)
+   into `"hooks"` in `~/.claude/settings.json`. If you already have other hooks, keep them and add these alongside
+2. Open `/hooks` in Claude Code, or start a new session
 
-フックは受け取った内容をデーモン（自分のマシンの `127.0.0.1:8787`）へ送るだけで、
-エージェントの動作は変えません。デーモンが止まっていても、エージェントは止まりません。
+The hooks only forward what they receive to the daemon on your own machine (`127.0.0.1:8787`).
+They do not change what the agent does. If the daemon is not running, the agent is not held up.
 
-### 動いているか確かめる
+### Check that it works
 
-パッドを USB で繋ぎ、Claude Code で何か頼みます。
+Plug the pad in over USB and ask Claude Code to do something.
 
 ```sh
 ./daemon/agentpadctl status
@@ -56,18 +59,19 @@ cd harness-pad-4
 
 ```
 常駐: 稼働中 (com.keyboard2026.agentpad)
+パッド: 接続中
   S1* BUSY     my-project       /Users/you/my-project  [8b278297]
   S2  (空き)
   S3  (空き)
   S4  (空き)
 ```
 
-S1 のキーが青く光れば成功です。
+If the S1 key lights up blue, it works.
 
-## セットアップ（Windows）
+## Setup (Windows)
 
-Python は [python.org](https://www.python.org/downloads/windows/) の 64 ビット版を入れておきます。
-PowerShell かコマンドプロンプトで、次を実行します。
+Install the 64-bit Python from [python.org](https://www.python.org/downloads/windows/) first.
+Then, in PowerShell or Command Prompt:
 
 ```bat
 git clone https://github.com/SoyaManabe/harness-pad-4.git
@@ -75,31 +79,39 @@ cd harness-pad-4
 python install.py
 ```
 
-`python` が見つからなければ `py install.py` を試してください。
-`install.py` は次の 4 つを行います。何度実行しても構いません。管理者権限は要りません。
+If `python` is not found, try `py install.py`.
+`install.py` does four things. It is safe to run more than once, and needs no administrator rights.
 
-1. `daemon\.venv` に Python の専用環境を作り、依存（`hidapi`）を入れる。
-   **hidapi の本体はこのパッケージに入っているので、ほかに入れるものはありません**
-2. Claude Code のスキル `/pad` を `%USERPROFILE%\.claude\skills\pad\` に入れる
-3. このフォルダの場所に合わせたフック設定を `daemon\hooks.windows.json` に書き出す
-4. デーモンを起動し、ログイン時に自動で起動するよう登録する
-   （レジストリの `HKCU\Software\Microsoft\Windows\CurrentVersion\Run` に `AgentPad` を足す）
+1. Creates a Python environment in `daemon\.venv` and installs the dependencies (`hidapi`, `psutil`).
+   **The `hidapi` package bundles the native library, so there is nothing else to install**
+2. Installs the Claude Code skill `/pad` into `%USERPROFILE%\.claude\skills\pad\`
+3. Adds the hooks to `%USERPROFILE%\.claude\settings.json` (details below)
+4. Starts the daemon and registers it to start at login
+   (adds `AgentPad` under `HKCU\Software\Microsoft\Windows\CurrentVersion\Run`)
 
-最後に、パッドが見えているかを調べて結果を出します。
+At the end it checks whether the hooks are registered and whether the pad is visible.
 
-### フックを設定する
+**After it finishes, open `/hooks` in Claude Code or start a new session** so the hooks are loaded.
 
-1. `daemon\hooks.windows.json` の `"hooks"` の中身を、`%USERPROFILE%\.claude\settings.json` の
-   `"hooks"` に統合する。すでに別のフックがあれば、消さずに並べる
-2. Claude Code で `/hooks` を開くか、セッションを始め直す
+### What it does to your Claude Code settings
 
-Windows のフックは、`curl` の代わりに同梱の [`daemon/hook_send.py`](daemon/hook_send.py) で送ります。
-Claude Code がフックを動かすシェル（Git Bash か PowerShell）に左右されないようにするためです。
-設定にはこのフォルダの場所が入るので、**フォルダを移動したら `install.py` をやり直し、統合し直します。**
+- Existing settings and hooks are kept. Only this pad's hooks are added
+- Running it again does not add duplicates. If you moved this folder, the old entries are updated in place
+- The previous contents are saved as `settings.json.bak` before the file is changed
+- If `settings.json` cannot be parsed, it is left untouched. `install.py` then tells you to merge
+  `daemon\hooks.windows.json` by hand, and `agentpadctl status` keeps warning until the hooks are registered
 
-### 動いているか確かめる
+On Windows the hooks send through the bundled [`daemon/hook_send.py`](daemon/hook_send.py) instead of
+`curl`, so that they do not depend on which shell Claude Code uses to run hooks (Git Bash or PowerShell).
+The hook entries contain the location of this folder, so **run `install.py` again if you move it.**
 
-パッドを USB で繋ぎ、Claude Code で何か頼みます。
+To enable the pad for a single project only, remove the entries from `%USERPROFILE%\.claude\settings.json`
+and merge `daemon\hooks.windows.json` into that project's `.claude\settings.json` instead.
+`agentpadctl` only looks at the user-level file, so it will keep reporting the hooks as unregistered.
+
+### Check that it works
+
+Plug the pad in over USB and ask Claude Code to do something.
 
 ```bat
 daemon\agentpadctl status
@@ -108,162 +120,166 @@ daemon\agentpadctl status
 ```
 自動起動: 登録済み
 デーモン: 稼働中 (PID 12345)
+パッド: 接続中 (PID 0x0005, LED 4 個)
   S1* BUSY     my-project       C:\Users\you\my-project  [8b278297]
   S2  (空き)
   S3  (空き)
   S4  (空き)
 ```
 
-S1 のキーが青く光れば成功です。光らなければ `daemon\agentpadctl check` と
-`daemon\agentpadctl logs` の出力を見てください。
+If the S1 key lights up blue, it works. If not, look at the output of `daemon\agentpadctl check`
+(hooks registered? pad visible?) and `daemon\agentpadctl logs`.
 
-### Windows での制限
+### Limitations on Windows
 
-Windows 版は、実機で通して確かめる前の段階です。
+The Windows version is experimental.
 
-- **端末を前に出す機能は、ウィンドウを選ぶところまでです。** タブは選べません。
-  WSL の中で動かしているセッションは見つけられません。
-- **デーモンが落ちても、自動では起き直りません。** `daemon\agentpadctl start` で起動します。
-  ログインのたびには自動で起動します。
-- ARM 版の Windows 向けには hidapi が配布されていません。x64 版の Python を使ってください。
+- **Bringing the terminal to the front works at the window level only.** Tabs cannot be selected.
+  Sessions running inside WSL cannot be found.
+- **The daemon is not restarted if it crashes.** Start it with `daemon\agentpadctl start`.
+  It does start automatically at every login.
+- There is no hidapi build for Windows on ARM. Use the x64 Python.
 
-## 使い方
+## Usage
 
-### LED の色
+### LED colors
 
-セッションは、始まった順に空いているキー（S1〜S4）へ入ります。
+Sessions take the free keys (S1–S4) in the order they start.
 
-| 色 | 状態 | |
+| Color | State | |
 |---|---|---|
-| 消灯 | 空き | セッションが割り当てられていない |
-| 暗い白 | 待機中 | |
-| 青 | 作業中 | エージェントが動いている |
-| **橙の点滅** | **入力待ち** | **許可や返事を待っている。対応が必要** |
-| 緑 | 完了 | 30 秒後に待機中へ戻る |
-| 赤 | エラー | |
+| Off | Empty | No session assigned |
+| Dim white | Idle | |
+| Blue | Busy | The agent is working |
+| **Blinking orange** | **Waiting** | **Waiting for permission or an answer. Needs you** |
+| Green | Done | Returns to idle after 30 seconds |
+| Red | Error | |
 
-### キー
+### Keys
 
-| 操作 | 動作 |
+| Action | Result |
 |---|---|
-| 短く押す | そのセッションの端末を前に出す |
-| 長く押す（0.8 秒） | 直近に発言したセッションを、そのキーに割り当てる。先客がいれば入れ替わる |
+| Short press | Bring that session's terminal to the front |
+| Long press (0.8 s) | Assign the session you most recently typed in to that key. If the key is taken, the two swap |
 
-端末を前に出す動作は、アプリによってできることが違います。macOS では次のとおりです。
+What "bring to the front" can do depends on the application. On macOS:
 
-| アプリ | 動作 |
+| Application | Result |
 |---|---|
-| Terminal、iTerm2 | そのセッションのタブを選んで前に出す |
-| VS Code、Cursor、Windsurf | そのフォルダを開いているウィンドウを前に出す（タブまでは選べない） |
-| その他 | アプリを前に出す |
+| Terminal, iTerm2 | Selects the session's tab and brings it to the front |
+| VS Code, Cursor, Windsurf | Brings the window that has the folder open to the front (cannot select the tab) |
+| Others | Brings the application to the front |
 
-初めて押したとき、macOS が「ほかのアプリの制御」の許可を求めます。許可してください。
+The first time you press a key, macOS asks for permission to control other applications. Allow it.
 
-Windows では、そのセッションを表示しているウィンドウを前に出します。タブまでは選べません。
-同じアプリが複数のウィンドウを開いていれば、題名に作業フォルダの名前を含むものを選びます。
-Windows がウィンドウの切り替えを断ることがあり、そのときはタスクバーのボタンが点滅します。
+On Windows, the window showing the session is brought to the front. Tabs cannot be selected.
+If the application has several windows, the one whose title contains the working folder's name is chosen.
+Windows sometimes refuses the switch; the taskbar button flashes instead.
 
-### ディスプレイ
+### Display
 
-上の 4 行がキーごとの状態、下の 4 行が、対応が必要なセッションの詳細です。
+The top four lines show the state of each key. The bottom four show the details of a session that needs you.
 
 ```
-1 BUSY api-server          ← S1〜S4 の状態と、セッション（作業フォルダの名前）
+1 BUSY api-server          ← state of S1–S4, and the session (name of its working folder)
 2 WAIT!my-project
 3 WAIT docs
 
-S2 WAIT 0:42    ! 1/2      ← 詳細を出しているキー、状態、待たせている時間
-Force push                 ← エージェントが付けた説明
-$ git push --force or      ← 求めている操作そのもの
-igin main                     （入りきらなければ 1 行ずつ送る）
+S2 WAIT 0:42    ! 1/2      ← which key the details are for, its state, how long it has waited
+Force push                 ← the description the agent gave
+$ git push --force or      ← the operation itself
+igin main                     (scrolls line by line if it does not fit)
 ```
 
-- 入力待ちかエラーのセッションが複数あれば、詳細を順番に出します（右上の `1/2`）。
-- **`!` は、取り返しのつかない操作らしいことを示します**（`rm -r`、`sudo`、`git push --force` など）。
-  決まった規則で調べているだけなので、**`!` が無いことは安全を意味しません。**
-- 待機中のセッションは一覧に出しません。全部が待機中か空きなら、ディスプレイは消えます。
+- If several sessions are waiting or in error, their details are shown in turn (`1/2` at the top right).
+- **`!` marks an operation that looks irreversible** (`rm -r`, `sudo`, `git push --force`, and so on).
+  It is a fixed set of rules, so **the absence of `!` does not mean the operation is safe.**
+- Idle sessions are not listed. If every session is idle or empty, the display turns off.
 
-### `/pad` スキル
+### The `/pad` skill
 
-Claude Code の中から、パッドを操作できます。
+You can operate the pad from inside Claude Code.
 
-| 入力 | 動作 |
+| Input | Result |
 |---|---|
-| `/pad 2` | **いまのセッション**を S2 に割り当てる |
-| `/pad release 2` | S2 を空ける |
-| `/pad status` | 割り当ての状況を見る |
-| `/pad start`、`/pad stop`、`/pad restart` | デーモンを起動・停止・再起動する |
+| `/pad 2` | Assign **the current session** to S2 |
+| `/pad release 2` | Free S2 |
+| `/pad status` | Show the assignments |
+| `/pad start`, `/pad stop`, `/pad restart` | Start, stop or restart the daemon |
 
-「パッドの S3 にして」のように頼んでも動きます。
+Asking in plain words ("put this on S3 of the pad") works too.
 
-### コマンド
+### Commands
 
 ```sh
-./daemon/agentpadctl status      # 稼働状況と割り当て
-./daemon/agentpadctl restart     # 再起動（割り当ては消える）
-./daemon/agentpadctl logs        # ログを追う
-./daemon/agentpadctl stop        # 止める（次のログインでまた起動する）
-./daemon/agentpadctl uninstall   # 常駐をやめる
+./daemon/agentpadctl status      # service state and assignments
+./daemon/agentpadctl restart     # restart (assignments are lost)
+./daemon/agentpadctl logs        # follow the log
+./daemon/agentpadctl stop        # stop (starts again at next login)
+./daemon/agentpadctl uninstall   # stop running as a service
 ```
 
-Windows では `daemon\agentpadctl` と書きます。同じコマンドに加えて、
-`daemon\agentpadctl check`（hidapi を読めるか、パッドが見えるか）があります。
-ログは `%LOCALAPPDATA%\AgentPad\agentpad.log` に出ます。
+On Windows, write `daemon\agentpadctl`. It has the same commands plus `daemon\agentpadctl check`
+(can hidapi be loaded, is the pad visible, are the hooks registered).
+The log is written to `%LOCALAPPDATA%\AgentPad\agentpad.log`.
 
-## 知っておくこと
+## Good to know
 
-- **パッドを抜いても、デーモンは動き続けます。** 挿し直せば、その時点の状態が出ます。
-- **デーモンが止まると、約 10 秒で LED とディスプレイが消えます。**
-  このパッドのキーは文字を入力しないので、デーモンが無いあいだは押しても何も起きません。
-- **セッションは 4 つまでです。** 5 つ目が始まると、待機中か完了のものが押し出されます。
-  4 つとも作業中や入力待ちなら、5 つ目は表示されません。
-- **デーモンを再起動すると、状態を忘れます。** 各セッションで次に何かが起きたときに戻ります。
-  入力待ちのまま止まっているセッションは、応答するまで表示されません。
-- デーモンは自分のマシン（`127.0.0.1`）からしか繋がりません。外部には何も送りません。
+- **Unplugging the pad does not stop the daemon.** Plug it back in and it shows the current state.
+- **If the daemon stops, the LEDs and display turn off after about 10 seconds.**
+  The keys do not type anything, so nothing happens when you press them while the daemon is down.
+- **Up to four sessions.** When a fifth starts, an idle or done session is pushed out.
+  If all four are busy or waiting, the fifth is not shown.
+- **Restarting the daemon forgets the state.** Each session comes back the next time something happens in it.
+  A session that is already waiting does not reappear until you respond to it.
+- The daemon only accepts connections from your own machine (`127.0.0.1`). It sends nothing outside.
 
-## うまく動かないとき
+## Troubleshooting
 
-| 症状 | 確かめること |
+| Symptom | What to check |
 |---|---|
-| LED が点かない | `./daemon/agentpadctl status` で「稼働中」か。`./daemon/agentpadctl logs` に「パッドに接続しました」が出ているか |
-| 「パッドが見つかりません」 | USB ケーブルがデータ通信に対応しているか。別のポートで試す |
-| 稼働中なのにセッションが出ない | フックを設定したか。設定後に `/hooks` を開いたか |
-| `libhidapi` を読めない（macOS） | `brew install hidapi` を実行してから `./install.sh` をやり直す |
-| キーを押しても端末が前に出ない（macOS） | システム設定 → プライバシーとセキュリティ → オートメーション で許可されているか |
-| フォルダを移動したら動かなくなった | `./install.sh`（Windows は `python install.py`）をやり直す。Windows はフックも統合し直す |
-| `hid` を読めない（Windows） | `daemon\agentpadctl check` の出力を見る。`python install.py` をやり直す |
-| キーを押しても端末が前に出ない（Windows） | 下の「端末が前に出ないとき（Windows）」の手順で、どこで見失っているかを調べる |
-| フックがエラーになる（Windows） | Claude Code が古いと、フック設定の `args` を読めない。Claude Code を更新する |
-| 起動しても応答がない（Windows） | `%LOCALAPPDATA%\AgentPad\agentpad.log` の末尾を見る。ポート 8787 をほかが使っていないか |
+| LEDs do not light | Does `agentpadctl status` say the daemon is running (稼働中) and the pad is connected (接続中)? |
+| Pad not found (未接続) | Is the USB cable a data cable? Try another port. On Windows, `daemon\agentpadctl check` tells you if a different pad version is plugged in |
+| Running, but no sessions appear | The hooks are not registered or not loaded. On Windows, run `daemon\agentpadctl check`. After registering, open `/hooks` or start a new session |
+| Display stays off | It is off when every session is idle. Give the agent something to do |
+| Cannot load `libhidapi` (macOS) | Run `brew install hidapi`, then `./install.sh` again |
+| Key press does not bring the terminal forward (macOS) | System Settings → Privacy & Security → Automation: is it allowed? |
+| Key press does not bring the terminal forward (Windows) | See [below](#when-the-terminal-does-not-come-forward-windows) |
+| Stopped working after moving the folder | Run `./install.sh` again (Windows: `python install.py`) |
+| Cannot load `hid` (Windows) | Look at `daemon\agentpadctl check`. Run `python install.py` again |
+| Hooks fail with an error (Windows) | An old Claude Code cannot read `args` in the hook settings. Update Claude Code |
+| Started but no response (Windows) | Look at the end of `%LOCALAPPDATA%\AgentPad\agentpad.log`. Is something else using port 8787? |
 
-### 端末が前に出ないとき（Windows）
+### When the terminal does not come forward (Windows)
 
-どこで見失っているかを調べられます。`C:\path\to\project` は、セッションを動かしているフォルダです。
+You can see where it loses track. `C:\path\to\project` is the folder the session is running in.
 
 ```bat
 cd daemon
 .venv\Scripts\python -m agentpad.focus C:\path\to\project
 ```
 
-エージェントの候補、そこから親をたどった列、選んだウィンドウが出ます。
+It prints the agent processes it found, their chain of parent processes, and the window it chose.
 
-## ほかのエージェントを繋ぐ
+## Connecting other agents
 
-デーモンは、エージェントの種類によらない共通の形式でイベントを受け取ります。
-エージェントが「入力待ちになった」「入力待ちが終わった」をコマンドの実行で知らせられるなら、
-繋げます。形式と送り方は [EVENTS.md](EVENTS.md) にあります。
+The daemon accepts events in a common format that does not depend on the kind of agent.
+If an agent can run a command when it starts waiting and when it stops waiting, it can be connected.
+The format and how to send it are in [EVENTS.md](EVENTS.md) (in Japanese).
 
-ほかのマシンで動くエージェントの状態を受け取る仕組み（ホスト名の区別）も入っていますが、
-**実験段階です。** 届け方は [EVENTS.md](EVENTS.md) §6 と §7 を見てください。
+There is also support for receiving the state of agents running on other machines (told apart by host name),
+but **it is experimental.** See §6 and §7 of [EVENTS.md](EVENTS.md).
 
-## 取り除く
+## Uninstall
+
+macOS:
 
 ```sh
 ./daemon/agentpadctl uninstall
 rm -r ~/.claude/skills/pad
 ```
 
-Windows では次のとおりです。
+Windows:
 
 ```bat
 daemon\agentpadctl uninstall
@@ -271,8 +287,9 @@ rmdir /s /q "%USERPROFILE%\.claude\skills\pad"
 rmdir /s /q "%LOCALAPPDATA%\AgentPad"
 ```
 
-そのあと、`~/.claude/settings.json` から追加したフックを消します。
+Then remove the hooks you added from `~/.claude/settings.json`
+(on Windows, the entries that call `hook_send.py`).
 
-## ライセンス
+## License
 
 [MIT](LICENSE)

@@ -4,11 +4,12 @@
 
   1. Python の専用環境 (daemon\\.venv) を作り、依存を入れる
   2. Claude Code のスキル /pad を入れる
-  3. このフォルダの場所に合わせたフック設定 (daemon\\hooks.windows.json) を書き出す
+  3. Claude Code の設定 (settings.json) に、デーモンへ状態を送るフックを足す
   4. デーモンを起動し、ログイン時に自動で起動するよう登録する
 
-Claude Code のフック設定だけは自動では入れない。既存の設定を壊さないよう、
-最後に表示する手順で手で統合する。
+フックは、既存の設定を消さずに足す。書き換える前の内容は settings.json.bak に残す。
+設定ファイルを読めないときは触らず、手で統合する手順を表示する
+（統合する中身は daemon\\hooks.windows.json に書き出してある）。
 
 macOS では install.sh を使う。
 """
@@ -27,14 +28,10 @@ DAEMON_DIR = ROOT / "daemon"
 VENV_DIR = DAEMON_DIR / ".venv"
 VENV_PYTHON = VENV_DIR / "Scripts" / "python.exe"
 CONTROL = DAEMON_DIR / "agentpadctl.py"
-HOOK_SENDER = DAEMON_DIR / "hook_send.py"
-HOOKS_EXAMPLE = DAEMON_DIR / "hooks.example.json"
 HOOKS_OUT = DAEMON_DIR / "hooks.windows.json"
 SKILL_DIR = Path(os.environ.get("CLAUDE_CONFIG_DIR") or Path.home() / ".claude") / "skills" / "pad"
 
 MIN_PYTHON = (3, 9)
-# フックがこの秒数で終わらなければ Claude Code が打ち切る。送信側の時間切れ (2 秒) より長くする
-HOOK_TIMEOUT_SEC = 5
 # スキルの中で、agentpadctl の呼び出し方に置き換える目印
 SKILL_PLACEHOLDER = "__AGENTPADCTL__"
 
@@ -65,23 +62,16 @@ def write_skill() -> None:
     (SKILL_DIR / "SKILL.md").write_text(text.replace(SKILL_PLACEHOLDER, call), encoding="utf-8")
 
 
-def write_hooks() -> None:
-    """hooks.example.json と同じイベントに、Windows 用の送り方を当てはめて書き出す。"""
-    example = json.loads(HOOKS_EXAMPLE.read_text(encoding="utf-8"))
-    handler = {
-        "type": "command",
-        # args があると、シェルを介さずにこのプログラムを直接起動する。
-        # Git Bash と PowerShell のどちらが使われるかに左右されず、空白を含むパスでも動く
-        "command": str(VENV_PYTHON),
-        # ポートを変えて入れた場合 (AGENTPAD_PORT) は、送り先も合わせる
-        "args": [str(HOOK_SENDER), *filter(None, [os.environ.get("AGENTPAD_PORT")])],
-        "timeout": HOOK_TIMEOUT_SEC,
-    }
-    hooks = {event: [{"hooks": [handler]}] for event in example["hooks"]}
+def write_hooks(hook_config) -> None:
+    """統合するフックの中身を、ファイルにも書き出しておく。手で統合するときと、
+    1 つのプロジェクトだけで有効にしたいときに使う。"""
+    # ポートを変えて入れた場合 (AGENTPAD_PORT) は、送り先も合わせる
+    handler = hook_config.handler(os.environ.get("AGENTPAD_PORT"))
+    hooks = {event: [{"hooks": [handler]}] for event in hook_config.events()}
     comment = [
         "install.py が、このフォルダの場所に合わせて書き出した Claude Code のフック設定。",
-        "hooks の中身を %USERPROFILE%\\.claude\\settings.json の hooks へ統合する。",
-        "このフォルダを移動したら、install.py をやり直して統合し直す。",
+        "install.py は同じものを %USERPROFILE%\\.claude\\settings.json に自動で足す。",
+        "それができなかったときは、hooks の中身を settings.json の hooks へ手で統合する。",
     ]
     HOOKS_OUT.write_text(
         json.dumps({"_comment": comment, "hooks": hooks}, ensure_ascii=False, indent=2) + "\n",
@@ -112,27 +102,48 @@ def main() -> int:
     print(f"==> スキル /pad を入れます ({SKILL_DIR})")
     write_skill()
 
-    print(f"==> フック設定を書き出します ({HOOKS_OUT})")
-    write_hooks()
+    print("==> Claude Code にフックを登録します")
+    sys.path.insert(0, str(DAEMON_DIR))
+    import hook_config
+
+    write_hooks(hook_config)
+    try:
+        print("    " + hook_config.install(os.environ.get("AGENTPAD_PORT")))
+        hooks_merged = True
+    except hook_config.SettingsError as exc:
+        # 読めない設定ファイルを書き換えると、ほかの設定まで壊しかねない。触らずに続ける
+        print(f"    登録できませんでした: {exc}")
+        hooks_merged = False
 
     print("==> デーモンを起動し、自動起動に登録します")
     run(VENV_PYTHON, CONTROL, "install")
 
-    print("==> パッドを確かめます")
-    # 見つからなくても続ける。あとから繋げばデーモンが自動で接続する
+    print("==> 確かめます")
+    # パッドが見つからなくても続ける。あとから繋げばデーモンが自動で接続する
     subprocess.run([str(VENV_PYTHON), str(CONTROL), "check"], check=False)
+
+    if hooks_merged:
+        print(
+            """
+セットアップが終わりました。
+
+Claude Code で /hooks を開くか、セッションを始め直すと、フックが読み込まれます。
+このフォルダを移動したときは、もう一度 install.py を実行してください。"""
+        )
+        return 0
 
     print(
         f"""
-セットアップが終わりました。残りは Claude Code のフック設定です。
+*** フックが未登録です。このままでは、Claude Code の状態がパッドに出ません。 ***
+
+設定ファイルを読めなかったので、自動では登録していません。手で統合してください。
 
   1. {HOOKS_OUT} の "hooks" の中身を、
-     {Path.home() / ".claude" / "settings.json"} の "hooks" に統合する
+     {hook_config.settings_path()} の "hooks" に統合する
   2. Claude Code で /hooks を開く（またはセッションを始め直す）
-
-このフォルダを移動したときは、もう一度 install.py を実行し、フックも統合し直してください。"""
+  3. daemon\\agentpadctl check で、登録できたかを確かめる"""
     )
-    return 0
+    return 1
 
 
 if __name__ == "__main__":

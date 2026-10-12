@@ -10,7 +10,7 @@
                              HOST を省くと、マシンを問わずに探す
     agentpadctl release N    S<N> を空ける
     agentpadctl logs         ログを追う
-    agentpadctl check        hidapi を読めるか、パッドが見えるかを調べる
+    agentpadctl check        hidapi を読めるか、パッドが見えるか、フックが登録されているかを調べる
 
 同じフォルダの agentpadctl.cmd から呼ぶ。macOS では agentpadctl（launchd 版）を使う。
 
@@ -292,7 +292,21 @@ def status() -> int:
             f"  S{row['slot']}{mark} {row['state']:<8} {row['label']:<16} "
             f"{where}  [{row['session_id'][:8]}]"
         )
+    warning = hook_problem()
+    if warning:
+        # セッションが出ない理由として最も多い。直るまで毎回出す
+        print(f"警告: {warning}")
+        print("      install.py をやり直すと登録されます")
     return 0
+
+
+def hook_problem() -> str | None:
+    """Claude Code にフックが登録されていなければ、その説明。"""
+    if not IS_WINDOWS:
+        return None  # macOS のフックは curl で送る別の形で、ここでは調べない
+    import hook_config
+
+    return hook_config.problem(settings()["port"])
 
 
 def slot_command(path: str, body: dict, message: str) -> None:
@@ -351,7 +365,18 @@ def logs() -> None:
 
 
 def check() -> int:
-    """パッドに繋ぐ前提が揃っているかを調べる。デバイスは開かない。"""
+    """動く前提が揃っているかを調べる。デバイスは開かない。"""
+    warning = hook_problem()
+    if warning:
+        print(f"フック: {warning}")
+        print("  install.py をやり直すと登録されます")
+    elif IS_WINDOWS:
+        print("フック: 登録済み（登録した直後は、Claude Code で /hooks を開くと読み込まれます）")
+    result = check_pad()
+    return 1 if warning else result
+
+
+def check_pad() -> int:
     try:
         import hid
     except ImportError as exc:
