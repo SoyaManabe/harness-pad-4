@@ -13,6 +13,9 @@
     VS Code 系          cwd かその祖先を開いているウィンドウを前面へ（タブまでは選べない）
     その他              アプリを前面へ出すだけ
 
+ここにあるのは macOS の実装。Windows の実装は focus_windows.py にあり、
+focus_session が OS を見て振り分ける。
+
     python3 -m agentpad.focus [cwd]    単体での動作確認
 """
 
@@ -28,7 +31,7 @@ from pathlib import Path
 log = logging.getLogger(__name__)
 
 # 端末を前面に出せる OS。プロセスの調査とウィンドウの操作が OS ごとに別物のため
-SUPPORTED = sys.platform == "darwin"
+SUPPORTED = sys.platform in ("darwin", "win32")
 
 # エージェント本体とみなす実行ファイル名
 AGENT_COMMANDS = ("claude",)
@@ -253,11 +256,15 @@ def focus_session(cwd: str, label: str = "") -> bool:
     name = label or cwd
 
     if not SUPPORTED:
-        log.warning("フォーカス移動は macOS でのみ対応しています")
+        log.warning("フォーカス移動は macOS と Windows でのみ対応しています")
         return False
     if not cwd:
         log.warning("%s の cwd が分からないため、フォーカスを移せません", name)
         return False
+    if sys.platform == "win32":
+        from . import focus_windows
+
+        return focus_windows.focus_session(cwd, label)
 
     ps_out = _run(["ps", "-axo", "pid=,ppid=,tty=,comm="])
     if ps_out is None:
@@ -347,6 +354,7 @@ class Focuser:
 
 
 if __name__ == "__main__":
-    logging.basicConfig(level=logging.INFO, format="%(levelname)-7s %(message)s")
+    # 単体で動かすのは調べるときなので、見つけたプロセスとウィンドウも出す
+    logging.basicConfig(level=logging.DEBUG, format="%(levelname)-7s %(message)s")
     target = sys.argv[1] if len(sys.argv) > 1 else str(Path.cwd())
     sys.exit(0 if focus_session(target) else 1)

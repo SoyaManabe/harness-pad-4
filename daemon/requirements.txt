@@ -1,6 +1,6 @@
 # AgentPad デーモンの依存。
-# HTTP サーバと状態管理は標準ライブラリのみで済ませてあるため、依存は HID の 1 つだけ。
-# --no-hid で起動する場合はこれも不要。
+# HTTP サーバと状態管理は標準ライブラリのみで済ませてあるため、依存は HID と、
+# Windows でプロセスを調べる psutil だけ。--no-hid で起動する場合は HID も不要。
 #
 # `hid` という名前のモジュールを出すパッケージは 2 つあり、OS で使い分ける
 # (違いは agentpad/hid_link.py が吸収する)。両方を同じ環境に入れてはならない。
@@ -9,3 +9,7 @@
 #   hidapi  hidapi 本体を同梱している。Windows ではこれだけで動く
 hid>=1.0.4; sys_platform != "win32"
 hidapi>=0.14; sys_platform == "win32"
+
+# 端末を前面に出すとき、プロセスの親子と作業フォルダを調べる (agentpad/focus_windows.py)。
+# macOS では ps と lsof で足りるので要らない。
+psutil>=5.9; sys_platform == "win32"

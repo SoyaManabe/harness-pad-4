@@ -350,6 +350,10 @@ def check() -> int:
         print("  install.py をやり直すか、この Python で pip install hidapi を実行してください")
         return 1
     print(f"hid モジュール: 読めました ({getattr(hid, '__file__', '?')})")
+    try:
+        import psutil  # noqa: F401 (読めるかどうかだけを見る)
+    except ImportError:
+        print("psutil: 読めません。キーを押しても端末が前に出ません。install.py をやり直してください")
 
     product_id = int(settings()["pid"], 0)
     found = [
