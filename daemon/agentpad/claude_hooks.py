@@ -34,7 +34,10 @@ PROMPT_EVENTS = {"UserPromptSubmit"}
 TOOL_INPUT_KEYS = ("command", "file_path", "url", "pattern", "query", "description", "prompt")
 
 # シェルのコマンドを実行するツール。入力はコマンドそのものとして渡す。
-SHELL_TOOLS = {"Bash"}
+SHELL_TOOLS = {"Bash", "PowerShell"}
+
+# パスの区切り。Windows のセッションからは \\ で届く
+PATH_SEPARATORS = "/\\"
 
 
 def from_hook(payload: dict, host: str = "") -> AgentEvent:
@@ -106,6 +109,8 @@ def _summarize_tool_input(tool_input, cwd) -> str:
         value = next((v for v in tool_input.values() if isinstance(v, str) and v), "")
 
     # 作業ディレクトリ配下のパスは相対にする。先頭の共通部分で行を使い切らないため。
-    if isinstance(cwd, str) and cwd and value.startswith(cwd.rstrip("/") + "/"):
-        value = value[len(cwd.rstrip("/")) + 1 :]
+    if isinstance(cwd, str):
+        root = cwd.rstrip(PATH_SEPARATORS)
+        if root and value.startswith(root) and value[len(root) : len(root) + 1] in tuple(PATH_SEPARATORS):
+            value = value[len(root) + 1 :]
     return value

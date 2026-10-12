@@ -14,12 +14,13 @@ Claude Code などのエージェントは、許可や返事を求めて止ま�
 | | |
 |---|---|
 | パッド | harness-pad-4（ファームウェアは書き込み済み） |
-| OS | **macOS**（Windows と Linux には未対応） |
+| OS | **macOS** か **Windows 10 / 11**（Windows は試験段階。下の「Windows での制限」を参照） |
 | Python | 3.9 以上 |
-| Homebrew | hidapi を入れるために使う |
 | エージェント | Claude Code（ほかのエージェントは「ほかのエージェントを繋ぐ」を参照） |
 
-## セットアップ
+macOS では、hidapi を入れるために Homebrew も使います。Windows では Python のほかに要るものはありません。
+
+## セットアップ（macOS）
 
 ```sh
 brew install hidapi
@@ -63,6 +64,68 @@ cd harness-pad-4
 
 S1 のキーが青く光れば成功です。
 
+## セットアップ（Windows）
+
+Python は [python.org](https://www.python.org/downloads/windows/) の 64 ビット版を入れておきます。
+PowerShell かコマンドプロンプトで、次を実行します。
+
+```bat
+git clone https://github.com/SoyaManabe/harness-pad-4.git
+cd harness-pad-4
+python install.py
+```
+
+`python` が見つからなければ `py install.py` を試してください。
+`install.py` は次の 4 つを行います。何度実行しても構いません。管理者権限は要りません。
+
+1. `daemon\.venv` に Python の専用環境を作り、依存（`hidapi`）を入れる。
+   **hidapi の本体はこのパッケージに入っているので、ほかに入れるものはありません**
+2. Claude Code のスキル `/pad` を `%USERPROFILE%\.claude\skills\pad\` に入れる
+3. このフォルダの場所に合わせたフック設定を `daemon\hooks.windows.json` に書き出す
+4. デーモンを起動し、ログイン時に自動で起動するよう登録する
+   （レジストリの `HKCU\Software\Microsoft\Windows\CurrentVersion\Run` に `AgentPad` を足す）
+
+最後に、パッドが見えているかを調べて結果を出します。
+
+### フックを設定する
+
+1. `daemon\hooks.windows.json` の `"hooks"` の中身を、`%USERPROFILE%\.claude\settings.json` の
+   `"hooks"` に統合する。すでに別のフックがあれば、消さずに並べる
+2. Claude Code で `/hooks` を開くか、セッションを始め直す
+
+Windows のフックは、`curl` の代わりに同梱の [`daemon/hook_send.py`](daemon/hook_send.py) で送ります。
+Claude Code がフックを動かすシェル（Git Bash か PowerShell）に左右されないようにするためです。
+設定にはこのフォルダの場所が入るので、**フォルダを移動したら `install.py` をやり直し、統合し直します。**
+
+### 動いているか確かめる
+
+パッドを USB で繋ぎ、Claude Code で何か頼みます。
+
+```bat
+daemon\agentpadctl status
+```
+
+```
+自動起動: 登録済み
+デーモン: 稼働中 (PID 12345)
+  S1* BUSY     my-project       C:\Users\you\my-project  [8b278297]
+  S2  (空き)
+  S3  (空き)
+  S4  (空き)
+```
+
+S1 のキーが青く光れば成功です。光らなければ `daemon\agentpadctl check` と
+`daemon\agentpadctl logs` の出力を見てください。
+
+### Windows での制限
+
+Windows 版は、実機で通して確かめる前の段階です。
+
+- **キーを押しても、端末は前に出ません。** LED とディスプレイ、長押しでの割り当て、`/pad` は動きます。
+- **デーモンが落ちても、自動では起き直りません。** `daemon\agentpadctl start` で起動します。
+  ログインのたびには自動で起動します。
+- ARM 版の Windows 向けには hidapi が配布されていません。x64 版の Python を使ってください。
+
 ## 使い方
 
 ### LED の色
@@ -85,7 +148,7 @@ S1 のキーが青く光れば成功です。
 | 短く押す | そのセッションの端末を前に出す |
 | 長く押す（0.8 秒） | 直近に発言したセッションを、そのキーに割り当てる。先客がいれば入れ替わる |
 
-端末を前に出す動作は、アプリによってできることが違います。
+端末を前に出す動作は macOS だけで、アプリによってできることが違います。
 
 | アプリ | 動作 |
 |---|---|
@@ -138,6 +201,10 @@ Claude Code の中から、パッドを操作できます。
 ./daemon/agentpadctl uninstall   # 常駐をやめる
 ```
 
+Windows では `daemon\agentpadctl` と書きます。同じコマンドに加えて、
+`daemon\agentpadctl check`（hidapi を読めるか、パッドが見えるか）があります。
+ログは `%LOCALAPPDATA%\AgentPad\agentpad.log` に出ます。
+
 ## 知っておくこと
 
 - **パッドを抜いても、デーモンは動き続けます。** 挿し直せば、その時点の状態が出ます。
@@ -156,9 +223,12 @@ Claude Code の中から、パッドを操作できます。
 | LED が点かない | `./daemon/agentpadctl status` で「稼働中」か。`./daemon/agentpadctl logs` に「パッドに接続しました」が出ているか |
 | 「パッドが見つかりません」 | USB ケーブルがデータ通信に対応しているか。別のポートで試す |
 | 稼働中なのにセッションが出ない | フックを設定したか。設定後に `/hooks` を開いたか |
-| `libhidapi` を読めない | `brew install hidapi` を実行してから `./install.sh` をやり直す |
-| キーを押しても端末が前に出ない | システム設定 → プライバシーとセキュリティ → オートメーション で許可されているか |
-| フォルダを移動したら動かなくなった | `./install.sh` をやり直す |
+| `libhidapi` を読めない（macOS） | `brew install hidapi` を実行してから `./install.sh` をやり直す |
+| キーを押しても端末が前に出ない（macOS） | システム設定 → プライバシーとセキュリティ → オートメーション で許可されているか |
+| フォルダを移動したら動かなくなった | `./install.sh`（Windows は `python install.py`）をやり直す。Windows はフックも統合し直す |
+| `hid` を読めない（Windows） | `daemon\agentpadctl check` の出力を見る。`python install.py` をやり直す |
+| フックがエラーになる（Windows） | Claude Code が古いと、フック設定の `args` を読めない。Claude Code を更新する |
+| 起動しても応答がない（Windows） | `%LOCALAPPDATA%\AgentPad\agentpad.log` の末尾を見る。ポート 8787 をほかが使っていないか |
 
 ## ほかのエージェントを繋ぐ
 
@@ -174,6 +244,14 @@ Claude Code の中から、パッドを操作できます。
 ```sh
 ./daemon/agentpadctl uninstall
 rm -r ~/.claude/skills/pad
+```
+
+Windows では次のとおりです。
+
+```bat
+daemon\agentpadctl uninstall
+rmdir /s /q "%USERPROFILE%\.claude\skills\pad"
+rmdir /s /q "%LOCALAPPDATA%\AgentPad"
 ```
 
 そのあと、`~/.claude/settings.json` から追加したフックを消します。

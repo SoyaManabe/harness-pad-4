@@ -2,3 +2,5 @@
 __pycache__/
 *.pyc
 .DS_Store
+# install.py がフォルダの場所に合わせて書き出す
+daemon/hooks.windows.json

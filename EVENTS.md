@@ -120,6 +120,10 @@ JSON オブジェクト 1 個が 1 イベント。
 
 `daemon/hooks.example.json` のとおり。`host` は付けなくてもよい。
 
+Windows では `curl` の代わりに `daemon/hook_send.py` で送る。Claude Code がフックを動かすシェルが
+環境によって違う（Git Bash か PowerShell）ため、シェルを介さずに起動する形にしてある。
+送る内容は同じ。
+
 ### Claude Code（リモート）
 
 URL に `?host=` を付ける。`daemon/hooks.example.json` は最初から付けてあるので、

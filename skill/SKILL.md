@@ -17,7 +17,7 @@ AgentPad のデーモンを `__AGENTPADCTL__` で操作する。
 | `release <N>` | `agentpadctl release <N>` — S<N> を空ける |
 | `status` | `agentpadctl status` |
 | `start` / `stop` / `restart` | `agentpadctl <同じ語>` |
-| `install` / `uninstall` | `agentpadctl <同じ語>` — launchd への常駐登録と解除 |
+| `install` / `uninstall` | `agentpadctl <同じ語>` — 常駐（ログイン時の自動起動）の登録と解除 |
 
 自然文で頼まれた場合（「S3 にして」「パッドを止めて」）も、上の表のどれかに当てはめる。
 当てはまらなければ実行せず、何をしたいのか聞く。

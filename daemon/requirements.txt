@@ -1,7 +1,11 @@
 # AgentPad デーモンの依存。
-# HTTP サーバと状態管理は標準ライブラリのみで済ませてあるため、依存はこれ 1 つ。
+# HTTP サーバと状態管理は標準ライブラリのみで済ませてあるため、依存は HID の 1 つだけ。
 # --no-hid で起動する場合はこれも不要。
 #
-# PyPI の `hid` はネイティブライブラリを同梱しない。別に hidapi 本体が要る
-# (macOS: brew install hidapi)。よく似た名前の `hidapi` パッケージとは API が違い、動かない。
-hid>=1.0.4
+# `hid` という名前のモジュールを出すパッケージは 2 つあり、OS で使い分ける
+# (違いは agentpad/hid_link.py が吸収する)。両方を同じ環境に入れてはならない。
+#
+#   hid     hidapi 本体を同梱しない。別に入れる (macOS: brew install hidapi)
+#   hidapi  hidapi 本体を同梱している。Windows ではこれだけで動く
+hid>=1.0.4; sys_platform != "win32"
+hidapi>=0.14; sys_platform == "win32"

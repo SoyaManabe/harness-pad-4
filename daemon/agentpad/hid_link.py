@@ -3,13 +3,19 @@
 デバイスが繋がっていなくてもデーモンは動き続ける。再接続は自動で試みる。
 パッド側も STATE が途切れたら通常のキーボードとして振る舞うため、
 どちらが落ちても相手を巻き込まない (phase0/PROTOCOL.md §3)。
+
+`hid` という名前のモジュールを出す PyPI のパッケージは 2 つあり、API が違う。
+どちらが入っていても動くように、違いは下の 2 つのクラスで吸収する:
+
+    hid      ctypes 版。hidapi 本体を別に入れる必要がある (macOS: brew install hidapi)
+    hidapi   Cython 版。hidapi 本体を同梱している。Windows ではこちらを使う
 """
 
 from __future__ import annotations
 
 import logging
+import sys
 import threading
-import time
 
 from .protocol import REPORT_SIZE, USAGE, USAGE_PAGE
 
@@ -17,6 +23,83 @@ log = logging.getLogger(__name__)
 
 RECONNECT_INTERVAL_SEC = 2.0
 READ_TIMEOUT_MS = 500
+
+# hid を読めないときに、何を入れればよいか
+INSTALL_HINT = (
+    "`pip install hidapi` を確かめてください"
+    if sys.platform == "win32"
+    else "`pip install hid` と `brew install hidapi` を確かめてください"
+)
+
+
+class _CtypesDevice:
+    """PyPI の `hid` で開いたデバイス。"""
+
+    def __init__(self, hid_module, path: bytes) -> None:
+        self._device = hid_module.Device(path=path)
+
+    def read(self, size: int, timeout_ms: int) -> bytes:
+        return bytes(self._device.read(size, timeout=timeout_ms))
+
+    def write(self, data: bytes) -> None:
+        self._device.write(data)
+
+    def close(self) -> None:
+        self._device.close()
+
+
+class _CythonDevice:
+    """PyPI の `hidapi` で開いたデバイス。"""
+
+    def __init__(self, hid_module, path: bytes) -> None:
+        self._device = hid_module.device()
+        self._device.open_path(path)
+
+    def read(self, size: int, timeout_ms: int) -> bytes:
+        return bytes(self._device.read(size, timeout_ms))
+
+    def write(self, data: bytes) -> None:
+        # 失敗を例外ではなく負の戻り値で知らせる
+        if self._device.write(data) < 0:
+            raise OSError(self._device.error() or "write failed")
+
+    def close(self) -> None:
+        self._device.close()
+
+
+def open_device(hid_module, path: bytes):
+    """パスを指定してデバイスを開く。失敗はどちらのパッケージでも OSError にそろえる。"""
+    backend = _CythonDevice if hasattr(hid_module, "device") else _CtypesDevice
+    return _Normalized(backend, hid_module, path)
+
+
+class _Normalized:
+    """パッケージごとに違う例外を OSError にそろえる。
+
+    `hid` の HIDException は OSError ではなく、`hidapi` は閉じた後の操作に ValueError を
+    投げる。そろえておかないと、パッドを抜いたときの例外を呼び出し側が取りこぼす。
+    """
+
+    def __init__(self, backend, hid_module, path: bytes) -> None:
+        self._inner = self._call(backend, hid_module, path)
+
+    def read(self, size: int, timeout_ms: int) -> bytes:
+        return self._call(self._inner.read, size, timeout_ms)
+
+    def write(self, data: bytes) -> None:
+        self._call(self._inner.write, data)
+
+    def close(self) -> None:
+        self._call(self._inner.close)
+
+    @staticmethod
+    def _call(function, *args):
+        try:
+            return function(*args)
+        except OSError:
+            raise
+        except Exception as exc:
+            raise OSError(str(exc) or type(exc).__name__) from exc
 
 
 class HidLink:
@@ -32,6 +115,8 @@ class HidLink:
         self._on_connect = on_connect
 
         self._device = None
+        # 送信に失敗した。閉じるのは受信スレッドに任せる (send を参照)
+        self._broken = False
         self._lock = threading.Lock()
         self._stop = threading.Event()
         self._thread: threading.Thread | None = None
@@ -63,7 +148,7 @@ class HidLink:
             raise ValueError(f"レポート長は {REPORT_SIZE} バイトである必要があります: {len(report)}")
 
         with self._lock:
-            if self._device is None:
+            if self._device is None or self._broken:
                 return False
             try:
                 # hidapi は先頭にレポート ID を要求する。QMK は 0 を使う。
@@ -71,7 +156,9 @@ class HidLink:
                 return True
             except OSError as exc:
                 log.warning("送信に失敗しました。切断とみなします: %s", exc)
-                self._close_locked()
+                # ここでは閉じない。受信スレッドが同じデバイスで read の最中かもしれず、
+                # その下で閉じると hidapi が解放済みのメモリに触る。
+                self._broken = True
                 return False
 
     # ------------------------------------------------------------------- 受信
@@ -86,12 +173,18 @@ class HidLink:
             try:
                 with self._lock:
                     device = self._device
+                    broken = self._broken
                 if device is None:
                     continue
-                data = device.read(REPORT_SIZE, timeout=READ_TIMEOUT_MS)
+                if broken:
+                    self._close()
+                    continue
+                data = device.read(REPORT_SIZE, READ_TIMEOUT_MS)
             except OSError as exc:
                 log.warning("受信に失敗しました。切断とみなします: %s", exc)
                 self._close()
+                # すぐに開き直さない。開けるのに読めない状態が続くと、空回りしてログが溢れる
+                self._stop.wait(RECONNECT_INTERVAL_SEC)
                 continue
             except Exception:
                 # OSError 以外（ライブラリの API 差異など）でスレッドを死なせない。
@@ -114,10 +207,7 @@ class HidLink:
         try:
             import hid
         except ImportError:
-            log.error(
-                "Python の hid パッケージか hidapi ライブラリを読めません。"
-                "`pip install hid` と `brew install hidapi` を確かめてください"
-            )
+            log.error("Python の hid モジュールか hidapi ライブラリを読めません。%s", INSTALL_HINT)
             self._stop.set()
             return False
 
@@ -135,13 +225,14 @@ class HidLink:
             return False
 
         try:
-            device = hid.Device(path=path)
+            device = open_device(hid, path)
         except OSError as exc:
             log.warning("パッドを開けませんでした: %s", exc)
             return False
 
         with self._lock:
             self._device = device
+            self._broken = False
         self._was_connected = True
         self._warned_missing = False
         log.info("パッドに接続しました (VID=0x%04X PID=0x%04X)", self.vendor_id, self.product_id)
@@ -174,3 +265,4 @@ class HidLink:
             except OSError:
                 pass
             self._device = None
+            self._broken = False

@@ -13,6 +13,7 @@ from __future__ import annotations
 
 import argparse
 import logging
+import logging.handlers
 import signal
 import sys
 import threading
@@ -21,6 +22,7 @@ from pathlib import Path
 
 from .actions import ActionHandler
 from .display import PadDisplay
+from . import focus
 from .focus import Focuser
 from .hid_link import HidLink
 from .hook_server import start_hook_server
@@ -36,7 +38,7 @@ from .registry import Registry
 try:
     from .metrics import Metrics
 except ImportError:
-    # 計測は実験用の機能で、配布物には含めない (release/build.sh)。無ければ計測しない。
+    # 計測は実験用の機能で、配布物には含めない (release/build.py)。無ければ計測しない。
     Metrics = None
 
 log = logging.getLogger("agentpad")
@@ -45,20 +47,46 @@ log = logging.getLogger("agentpad")
 # ディスプレイの経過時間と本文の送りもこの周期で進む。
 HEARTBEAT_INTERVAL_SEC = 1.0
 
+# --log で書き出すログの上限。超えたら 1 世代だけ残して切り替える
+LOG_MAX_BYTES = 1_000_000
+LOG_BACKUPS = 1
+
 
 def main(argv: list[str] | None = None) -> int:
     args = _parse_args(argv)
+    handlers = None
+    if args.log is not None:
+        # 画面を持たずに常駐する場合（Windows の pythonw）は標準エラーが無い。
+        # 書き出し先を既定の文字コードに任せると、日本語が OS によって化ける。
+        args.log.parent.mkdir(parents=True, exist_ok=True)
+        handlers = [
+            logging.handlers.RotatingFileHandler(
+                args.log, maxBytes=LOG_MAX_BYTES, backupCount=LOG_BACKUPS, encoding="utf-8"
+            )
+        ]
     logging.basicConfig(
         level=logging.DEBUG if args.verbose else logging.INFO,
         format="%(asctime)s %(levelname)-7s %(message)s",
         datefmt="%H:%M:%S",
+        handlers=handlers,
     )
 
+    try:
+        return _serve(args)
+    except Exception:
+        # 標準エラーが無いと、ログに残さないかぎり落ちた理由がどこにも出ない
+        log.exception("デーモンが異常終了しました")
+        return 1
+
+
+def _serve(args: argparse.Namespace) -> int:
     wake = threading.Event()
     aggregated = args.slots == 1
     metrics = Metrics(args.metrics, args.condition, aggregated=aggregated) if Metrics else None
     registry = Registry(on_change=wake.set, metrics=metrics, display_slots=args.slots)
-    focuser = None if args.no_focus else Focuser()
+    focuser = None if args.no_focus or not focus.SUPPORTED else Focuser()
+    if not args.no_focus and not focus.SUPPORTED:
+        log.info("この OS では、キーを押して端末を前面に出す機能は未対応です。LED と表示は動きます")
     actions = ActionHandler(registry, metrics=metrics, focuser=focuser)
     display = PadDisplay()
 
@@ -95,6 +123,9 @@ def main(argv: list[str] | None = None) -> int:
 
     signal.signal(signal.SIGINT, _shutdown)
     signal.signal(signal.SIGTERM, _shutdown)
+    if hasattr(signal, "SIGBREAK"):
+        # Windows。コンソールを閉じたときと Ctrl-Break で届く
+        signal.signal(signal.SIGBREAK, _shutdown)
 
     log.info("待機中。Ctrl-C で終了します")
     try:
@@ -205,6 +236,12 @@ def _parse_args(argv: list[str] | None) -> argparse.Namespace:
         "--no-focus",
         action="store_true",
         help="セッションキーを押しても端末を前面に出さない",
+    )
+    parser.add_argument(
+        "--log",
+        type=Path,
+        default=None,
+        help="ログをこのファイルへ書く。指定しなければ標準エラーへ出す",
     )
     parser.add_argument("-v", "--verbose", action="store_true", help="デバッグログを出す")
     if Metrics is not None:

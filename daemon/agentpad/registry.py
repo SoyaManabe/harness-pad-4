@@ -60,6 +60,11 @@ DANGER_PATTERNS = tuple(
         r"\b(drop|truncate)\s+(table|database|schema)\b",
         r"\bdelete\s+from\b",
         r">\s*/dev/(sd|disk|nvme)",
+        # PowerShell と cmd
+        r"\b(remove-item|ri|del|erase|rd|rmdir)\b.*\s-(r|fo)[a-z]*\b",  # -Recurse / -Force
+        r"\b(del|erase|rd|rmdir)\s+(\S+\s+)*/[sqf]\b",
+        r"\b(format-volume|clear-disk|remove-partition)\b",
+        r"\|\s*(iex|invoke-expression)\b",  # irm ... | iex
     )
 )
 

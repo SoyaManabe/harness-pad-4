@@ -27,6 +27,9 @@ from pathlib import Path
 
 log = logging.getLogger(__name__)
 
+# 端末を前面に出せる OS。プロセスの調査とウィンドウの操作が OS ごとに別物のため
+SUPPORTED = sys.platform == "darwin"
+
 # エージェント本体とみなす実行ファイル名
 AGENT_COMMANDS = ("claude",)
 
@@ -249,7 +252,7 @@ def focus_session(cwd: str, label: str = "") -> bool:
     """cwd で動いているセッションの端末を前面に出す。できたら True。"""
     name = label or cwd
 
-    if sys.platform != "darwin":
+    if not SUPPORTED:
         log.warning("フォーカス移動は macOS でのみ対応しています")
         return False
     if not cwd:

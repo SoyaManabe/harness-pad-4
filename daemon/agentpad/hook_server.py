@@ -19,6 +19,7 @@ from __future__ import annotations
 
 import json
 import logging
+import os
 import threading
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from urllib.parse import parse_qs, urlsplit
@@ -71,6 +72,8 @@ class _Handler(BaseHTTPRequestHandler):
                 200,
                 {
                     "ok": True,
+                    # 常駐の仕組みを持たない OS で、止める相手を確かめるのに使う (agentpadctl.py)
+                    "pid": os.getpid(),
                     "sessions": self.registry.describe(),
                     "slots": self.registry.snapshot(),
                 },

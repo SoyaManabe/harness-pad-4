@@ -1,0 +1,6 @@
+# 改行を OS によらず固定する。Windows で取り出しても、シェルスクリプトは LF のまま、
+# バッチファイルは CRLF のままにする
+* text=auto
+*.sh text eol=lf
+daemon/agentpadctl text eol=lf
+*.cmd text eol=crlf
