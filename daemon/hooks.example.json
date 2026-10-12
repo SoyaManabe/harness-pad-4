@@ -1,0 +1,97 @@
+{
+  "_comment": [
+    "AgentPad デーモンにセッションの状態を送るための、Claude Code のフック設定。",
+    "",
+    "このファイルは「見本」であり、置くだけでは有効にならない。",
+    "有効にするには、下の hooks の中身を Claude Code の設定ファイルの hooks へ統合する。",
+    "既存の hooks 設定を上書きしないよう、必ず手で確認してからマージする。",
+    "",
+    "  全プロジェクトで有効にする   ~/.claude/settings.json",
+    "  1 プロジェクトだけ           そのプロジェクトの .claude/settings.json",
+    "",
+    "統合したら、Claude Code で /hooks を開くか、セッションを始め直すと読み込まれる。",
+    "",
+    "フックは受け取った内容をそのままデーモンへ送るだけで、エージェントの動作は変えない。",
+    "デーモンが動いていないときは送信に失敗するが、すぐに諦めるのでエージェントは止まらない。",
+    "?host= は、どのマシンのセッションかをデーモンに伝える。デーモンと同じマシンなら無視される。"
+  ],
+  "hooks": {
+    "SessionStart": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "curl -s -m 2 -X POST \"http://127.0.0.1:8787/hook?host=$(hostname -s)\" -H \"Content-Type: application/json\" -d @- >/dev/null 2>&1 || true",
+            "timeout": 3
+          }
+        ]
+      }
+    ],
+    "SessionEnd": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "curl -s -m 2 -X POST \"http://127.0.0.1:8787/hook?host=$(hostname -s)\" -H \"Content-Type: application/json\" -d @- >/dev/null 2>&1 || true",
+            "timeout": 3
+          }
+        ]
+      }
+    ],
+    "UserPromptSubmit": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "curl -s -m 2 -X POST \"http://127.0.0.1:8787/hook?host=$(hostname -s)\" -H \"Content-Type: application/json\" -d @- >/dev/null 2>&1 || true",
+            "timeout": 3
+          }
+        ]
+      }
+    ],
+    "Notification": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "curl -s -m 2 -X POST \"http://127.0.0.1:8787/hook?host=$(hostname -s)\" -H \"Content-Type: application/json\" -d @- >/dev/null 2>&1 || true",
+            "timeout": 3
+          }
+        ]
+      }
+    ],
+    "PermissionRequest": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "curl -s -m 2 -X POST \"http://127.0.0.1:8787/hook?host=$(hostname -s)\" -H \"Content-Type: application/json\" -d @- >/dev/null 2>&1 || true",
+            "timeout": 3
+          }
+        ]
+      }
+    ],
+    "Stop": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "curl -s -m 2 -X POST \"http://127.0.0.1:8787/hook?host=$(hostname -s)\" -H \"Content-Type: application/json\" -d @- >/dev/null 2>&1 || true",
+            "timeout": 3
+          }
+        ]
+      }
+    ],
+    "StopFailure": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "curl -s -m 2 -X POST \"http://127.0.0.1:8787/hook?host=$(hostname -s)\" -H \"Content-Type: application/json\" -d @- >/dev/null 2>&1 || true",
+            "timeout": 3
+          }
+        ]
+      }
+    ]
+  }
+}

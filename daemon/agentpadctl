@@ -1,0 +1,219 @@
+#!/bin/bash
+# agentpadctl — AgentPad デーモンの常駐化と操作。
+#
+#   agentpadctl install      launchd に登録して起動する（ログイン時に自動起動・落ちたら再起動）
+#   agentpadctl uninstall    登録を外して止める
+#   agentpadctl start|stop|restart
+#   agentpadctl status       稼働状況とスロットの割り当て
+#   agentpadctl assign N [SESSION_ID] [CWD] [HOST]
+#                            セッションを S<N> へ。先客がいれば入れ替える。
+#                            SESSION_ID を省くと、直近に発言したセッション。
+#                            HOST を省くと、マシンを問わずに探す
+#   agentpadctl release N    S<N> を空ける
+#   agentpadctl logs         ログを追う
+#
+# 起動引数は下の変数で決まる。環境変数で上書きして install し直せば変えられる:
+#
+#   AGENTPAD_PORT=8788 agentpadctl install   ポートを変えたいとき
+
+set -euo pipefail
+
+# ───────────────────────────────── 設定
+
+LABEL="com.keyboard2026.agentpad"
+
+# パッドのプロダクト ID
+PAD_PID="${AGENTPAD_PID:-0x0005}"
+# 物理的に存在する LED の数
+SLOTS="${AGENTPAD_SLOTS:-4}"
+PORT="${AGENTPAD_PORT:-8787}"
+
+# hidapi の場所。Python の hid はネイティブライブラリを同梱しない。
+# Homebrew の場所は Apple シリコンと Intel で違う
+HIDAPI_LIB_DIR="${AGENTPAD_HIDAPI_LIB_DIR:-$(brew --prefix 2>/dev/null || echo /opt/homebrew)/lib}"
+
+LOG="$HOME/Library/Logs/agentpad.log"
+PLIST="$HOME/Library/LaunchAgents/$LABEL.plist"
+DAEMON_DIR="$(cd "$(dirname "$0")" && pwd)"
+DOMAIN="gui/$(id -u)"
+URL="http://127.0.0.1:$PORT"
+
+# ───────────────────────────────── 部品
+
+die() { echo "agentpadctl: $*" >&2; exit 1; }
+
+loaded() { launchctl print "$DOMAIN/$LABEL" >/dev/null 2>&1; }
+
+# launchd の管理外で動いているデーモン（手で起動したもの）。
+# ポートとパッドを奪い合うので、常駐版を起動する前に止める。
+stop_stray() {
+    if ! loaded && pkill -TERM -f "agentpad --pid" 2>/dev/null; then
+        echo "手動で起動されていたデーモンを止めました"
+        sleep 1
+    fi
+}
+
+write_plist() {
+    local python="$DAEMON_DIR/.venv/bin/python3"
+    # 専用の環境 (.venv) があればそれを使う。無ければ PATH の python3
+    [ -x "$python" ] || python="$(command -v python3)" || die "python3 が見つかりません"
+    mkdir -p "$(dirname "$PLIST")" "$(dirname "$LOG")"
+    cat > "$PLIST" <<EOF
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>Label</key>
+    <string>$LABEL</string>
+    <key>ProgramArguments</key>
+    <array>
+        <string>$python</string>
+        <string>-m</string>
+        <string>agentpad</string>
+        <string>--pid</string>
+        <string>$PAD_PID</string>
+        <string>--slots</string>
+        <string>$SLOTS</string>
+        <string>--port</string>
+        <string>$PORT</string>
+    </array>
+    <key>WorkingDirectory</key>
+    <string>$DAEMON_DIR</string>
+    <key>EnvironmentVariables</key>
+    <dict>
+        <key>DYLD_LIBRARY_PATH</key>
+        <string>$HIDAPI_LIB_DIR</string>
+        <key>PATH</key>
+        <string>/usr/bin:/bin:/usr/sbin:/sbin</string>
+    </dict>
+    <key>RunAtLoad</key>
+    <true/>
+    <key>KeepAlive</key>
+    <true/>
+    <key>StandardOutPath</key>
+    <string>$LOG</string>
+    <key>StandardErrorPath</key>
+    <string>$LOG</string>
+</dict>
+</plist>
+EOF
+}
+
+start() {
+    [ -f "$PLIST" ] || die "未登録です。先に agentpadctl install を実行してください"
+    if loaded; then
+        echo "すでに動いています"
+        return
+    fi
+    stop_stray
+    launchctl bootstrap "$DOMAIN" "$PLIST"
+    echo "起動しました"
+}
+
+stop() {
+    if loaded; then
+        launchctl bootout "$DOMAIN/$LABEL"
+        echo "止めました（次のログイン時、または agentpadctl start で再び起動します）"
+    elif pkill -TERM -f "agentpad --pid" 2>/dev/null; then
+        echo "手動で起動されていたデーモンを止めました"
+    else
+        echo "動いていません"
+    fi
+}
+
+# デーモンへ JSON を POST し、結果を 1 行で表示する
+post() {
+    local path="$1" body="$2" reply
+    reply="$(curl -s -m 3 -X POST -H 'Content-Type: application/json' -d "$body" "$URL$path")" \
+        || die "デーモンに繋がりません。agentpadctl status で確認してください"
+    python3 -c '
+import json, sys
+reply = json.loads(sys.argv[1])
+if not reply.get("ok"):
+    sys.exit("失敗: " + reply.get("error", "不明なエラー"))
+print(sys.argv[2].format(**reply))
+print(reply.get("sessions", ""))
+' "$reply" "$3"
+}
+
+slot_arg() {
+    case "${1:-}" in
+        [1-4]) ;;
+        *) die "スロットは 1〜4 で指定してください" ;;
+    esac
+}
+
+status() {
+    if loaded; then
+        echo "常駐: 稼働中 ($LABEL)"
+    elif pgrep -f "agentpad --pid" >/dev/null; then
+        echo "常駐: していません（手動で起動されたデーモンが動いています）"
+    else
+        echo "常駐: 停止中"
+    fi
+
+    local reply
+    if ! reply="$(curl -s -m 3 "$URL/status")"; then
+        echo "デーモンから応答がありません ($URL)"
+        return 1
+    fi
+    python3 -c '
+import json, sys
+for row in json.loads(sys.argv[1])["slots"]:
+    mark = "*" if row["target"] else " "
+    if row["state"] == "EMPTY":
+        print("  S{slot}{0} (空き)".format(mark, **row))
+    else:
+        row["short_id"] = row["session_id"][:8]
+        row["where"] = row["host"] + ":" + row["cwd"] if row.get("host") else row["cwd"]
+        print("  S{slot}{0} {state:<8} {label:<16} {where}  [{short_id}]".format(mark, **row))
+' "$reply"
+}
+
+# ───────────────────────────────── コマンド
+
+case "${1:-}" in
+    install)
+        if loaded; then launchctl bootout "$DOMAIN/$LABEL"; sleep 1; fi
+        write_plist
+        start
+        echo "登録先: $PLIST"
+        echo "ログ:   $LOG"
+        ;;
+    uninstall)
+        stop
+        rm -f "$PLIST"
+        echo "登録を外しました"
+        ;;
+    start) start ;;
+    stop) stop ;;
+    restart)
+        if loaded; then
+            launchctl kickstart -k "$DOMAIN/$LABEL"
+            echo "再起動しました"
+        else
+            start
+        fi
+        ;;
+    status) status ;;
+    assign)
+        slot_arg "${2:-}"
+        body="$(python3 -c '
+import json, sys
+body = {"slot": int(sys.argv[1]), "session_id": sys.argv[2], "cwd": sys.argv[3]}
+if sys.argv[4]:
+    body["host"] = sys.argv[4]
+print(json.dumps(body))
+' "$2" "${3:-}" "${4:-}" "${5:-}")"
+        post /assign "$body" "{label} を S$2 に割り当てました"
+        ;;
+    release)
+        slot_arg "${2:-}"
+        post /release "{\"slot\": $2}" "S$2 ({label}) を空けました"
+        ;;
+    logs) exec tail -n 30 -f "$LOG" ;;
+    *)
+        sed -n '2,15p' "$0" | sed 's/^# \{0,1\}//'
+        exit 1
+        ;;
+esac
