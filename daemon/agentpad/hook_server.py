@@ -36,6 +36,7 @@ MAX_BODY_BYTES = 256 * 1024
 class _Handler(BaseHTTPRequestHandler):
     server_version = "AgentPad/1.0"
     registry = None  # サーバ生成時に差し込む
+    pad_connected = None  # パッドに繋がっているかを返す関数。HID を使わないなら None
 
     def do_POST(self) -> None:  # noqa: N802 (BaseHTTPRequestHandler の規約)
         path, host = self._route()
@@ -74,6 +75,8 @@ class _Handler(BaseHTTPRequestHandler):
                     "ok": True,
                     # 常駐の仕組みを持たない OS で、止める相手を確かめるのに使う (agentpadctl.py)
                     "pid": os.getpid(),
+                    # 光らないときに、状態が届いていないのかパッドに繋がっていないのかを分ける
+                    "pad": type(self).pad_connected() if type(self).pad_connected else None,
                     "sessions": self.registry.describe(),
                     "slots": self.registry.snapshot(),
                 },
@@ -162,9 +165,13 @@ class _Handler(BaseHTTPRequestHandler):
         log.debug("http: " + fmt, *args)
 
 
-def start_hook_server(registry, host: str, port: int) -> ThreadingHTTPServer:
+def start_hook_server(registry, host: str, port: int, pad_connected=None) -> ThreadingHTTPServer:
     """イベント受信サーバを起動する。呼び出し側が shutdown() すること。"""
-    handler = type("Handler", (_Handler,), {"registry": registry})
+    handler = type(
+        "Handler",
+        (_Handler,),
+        {"registry": registry, "pad_connected": staticmethod(pad_connected) if pad_connected else None},
+    )
     server = ThreadingHTTPServer((host, port), handler)
     thread = threading.Thread(target=server.serve_forever, name="hook-server", daemon=True)
     thread.start()

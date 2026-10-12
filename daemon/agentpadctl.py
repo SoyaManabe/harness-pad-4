@@ -43,6 +43,8 @@ DEFAULT_SLOTS = "4"
 DEFAULT_PORT = "8787"
 
 PAD_VID = 0xFEED
+# パッドの版ごとのプロダクト ID と、LED の数（1 個の版は全セッションを 1 個に集約する）
+PAD_VERSIONS = {0x0004: ("ブレッドボード版", "1"), 0x0005: ("基板版", "4")}
 # パッドの Raw HID インタフェース (agentpad/protocol.py と同じ値)
 RAW_HID_USAGE_PAGE = 0xFF60
 
@@ -273,6 +275,13 @@ def status() -> int:
         print(f"デーモン: 停止中（{url('')} から応答がありません）")
         return 1
     print(f"デーモン: 稼働中 (PID {reply.get('pid', '?')})")
+    if reply.get("pad") is not None:
+        chosen = settings()
+        print(
+            f"パッド: 接続中 (PID {chosen['pid']}, LED {chosen['slots']} 個)"
+            if reply["pad"]
+            else f"パッド: 未接続（PID {chosen['pid']} を探しています。agentpadctl check で調べられます）"
+        )
     for row in reply["slots"]:
         mark = "*" if row["target"] else " "
         if row["state"] == "EMPTY":
@@ -356,17 +365,28 @@ def check() -> int:
         print("psutil: 読めません。キーを押しても端末が前に出ません。install.py をやり直してください")
 
     product_id = int(settings()["pid"], 0)
-    found = [
-        info
-        for info in hid.enumerate(PAD_VID, product_id)
+    # プロダクト ID を問わずに探す。別の版が繋がっていることに気づけるように
+    pads = {
+        info["product_id"]: info
+        for info in hid.enumerate(PAD_VID, 0)
         if info.get("usage_page") == RAW_HID_USAGE_PAGE
-    ]
+    }
     name = f"VID=0x{PAD_VID:04X} PID=0x{product_id:04X}"
-    if not found:
-        print(f"パッド ({name}): 見つかりません。USB で繋ぐと、デーモンが自動で接続します")
-        return 1
-    print(f"パッド ({name}): 見つかりました ({found[0].get('product_string') or '名前なし'})")
-    return 0
+    if product_id in pads:
+        print(f"パッド ({name}): 見つかりました ({pads[product_id].get('product_string') or '名前なし'})")
+        return 0
+
+    print(f"パッド ({name}): 見つかりません")
+    if not pads:
+        print("  USB で繋ぐと、デーモンが自動で接続します")
+    for other in sorted(pads):
+        version, slots = PAD_VERSIONS.get(other, ("別の版", settings()["slots"]))
+        print(f"  {version}のパッド (PID=0x{other:04X}) が繋がっています。次のように入れ直すと繋がります:")
+        if IS_WINDOWS:
+            print(f"    set AGENTPAD_PID=0x{other:04X}& set AGENTPAD_SLOTS={slots}& daemon\\agentpadctl install")
+        else:
+            print(f"    AGENTPAD_PID=0x{other:04X} AGENTPAD_SLOTS={slots} ./daemon/agentpadctl install")
+    return 1
 
 
 def main(argv: list[str]) -> int:

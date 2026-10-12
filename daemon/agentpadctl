@@ -159,7 +159,10 @@ status() {
     fi
     python3 -c '
 import json, sys
-for row in json.loads(sys.argv[1])["slots"]:
+reply = json.loads(sys.argv[1])
+if reply.get("pad") is not None:
+    print("パッド: " + ("接続中" if reply["pad"] else "未接続（" + sys.argv[2] + " を探しています）"))
+for row in reply["slots"]:
     mark = "*" if row["target"] else " "
     if row["state"] == "EMPTY":
         print("  S{slot}{0} (空き)".format(mark, **row))
@@ -167,7 +170,7 @@ for row in json.loads(sys.argv[1])["slots"]:
         row["short_id"] = row["session_id"][:8]
         row["where"] = row["host"] + ":" + row["cwd"] if row.get("host") else row["cwd"]
         print("  S{slot}{0} {state:<8} {label:<16} {where}  [{short_id}]".format(mark, **row))
-' "$reply"
+' "$reply" "PID $PAD_PID"
 }
 
 # ───────────────────────────────── コマンド

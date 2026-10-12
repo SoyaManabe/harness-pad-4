@@ -112,7 +112,9 @@ def _serve(args: argparse.Namespace) -> int:
     else:
         log.info("--no-hid: HID を使わずフックの受信のみ確認します")
 
-    server = start_hook_server(registry, args.host, args.port)
+    server = start_hook_server(
+        registry, args.host, args.port, pad_connected=(lambda: link.connected) if link else None
+    )
 
     stopping = threading.Event()
 
